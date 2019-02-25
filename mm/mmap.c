@@ -750,7 +750,7 @@ int __vma_adjust(struct vm_area_struct *vma, unsigned long start,
 			if (remove_next == 2 && !next->anon_vma)
 				exporter = next->vm_next;
 
-		} else if (end > next->vm_start) {	//新区域和后项vma管理的区域部分重合，没有超过：是扩张操作
+		} else if (end > next->vm_start) {	//新区域和后项vma管理的区域部分重合，没有超过：是vma扩张操作
 			/*
 			 * vma expands, overlapping part of the next:
 			 * mprotect case 5 shifting the boundary up.
@@ -759,7 +759,7 @@ int __vma_adjust(struct vm_area_struct *vma, unsigned long start,
 			exporter = next;
 			importer = vma;
 			VM_WARN_ON(expand != importer);
-		} else if (end < vma->vm_end) {		//新区域小于前项vma管理区域的结束地址：是收缩操作
+		} else if (end < vma->vm_end) {		//新区域小于前项vma管理区域的结束地址：是vma收缩操作
 			/*
 			 * vma shrinks, and !insert tells it's not
 			 * split_vma inserting another: so it must be
@@ -780,16 +780,16 @@ int __vma_adjust(struct vm_area_struct *vma, unsigned long start,
 			int error;
 
 			importer->anon_vma = exporter->anon_vma;
-			error = anon_vma_clone(importer, exporter);
+			error = anon_vma_clone(importer, exporter);	//匿名区间的克隆
 			if (error)
 				return error;
 		}
 	}
 again:
-	vma_adjust_trans_huge(orig_vma, start, end, adjust_next);
+	vma_adjust_trans_huge(orig_vma, start, end, adjust_next); //判断新区域对应的页目录表是否需要分割
 
-	if (file) {
-		mapping = file->f_mapping;
+	if (file) {	//前项vma对应的区域有映射文件
+		mapping = file->f_mapping;				//获取该文件对应的地址空间address_space{}
 		root = &mapping->i_mmap;
 		uprobe_munmap(vma, vma->vm_start, vma->vm_end);
 
@@ -822,11 +822,12 @@ again:
 
 	if (root) {
 		flush_dcache_mmap_lock(mapping);
-		vma_interval_tree_remove(vma, root);
+		vma_interval_tree_remove(vma, root);		//将前项vma从红黑树中移除
 		if (adjust_next)
-			vma_interval_tree_remove(next, root);
+			vma_interval_tree_remove(next, root);	//将后项vma从红黑树中移除
 	}
 
+	//下面语句是调整前项和后项vma所管理的区间，调整完毕后重新插入红黑树中
 	if (start != vma->vm_start) {
 		vma->vm_start = start;
 		start_changed = true;
@@ -843,8 +844,8 @@ again:
 
 	if (root) {
 		if (adjust_next)
-			vma_interval_tree_insert(next, root);
-		vma_interval_tree_insert(vma, root);
+			vma_interval_tree_insert(next, root);	//将后项vma插入红黑树中
+		vma_interval_tree_insert(vma, root);		//将前项vma插入红黑树中
 		flush_dcache_mmap_unlock(mapping);
 	}
 
@@ -902,16 +903,16 @@ again:
 			uprobe_mmap(next);
 	}
 
-	if (remove_next) {
-		if (file) {
+	if (remove_next) {	//新区域与后项vma有区域重合
+		if (file) {		//先将后项vma从文件对应的address space地址空间中解除映射
 			uprobe_munmap(next, next->vm_start, next->vm_end);
 			fput(file);
 		}
-		if (next->anon_vma)
+		if (next->anon_vma)				//将后项vma从匿名映射表中删除
 			anon_vma_merge(vma, next);
-		mm->map_count--;
+		mm->map_count--;				//VMA的数量减一
 		mpol_put(vma_policy(next));
-		vm_area_free(next);
+		vm_area_free(next);				//将该VMA对应的结构体放回对应的slab中
 		/*
 		 * In mprotect's case 6 (see comments on vma_merge),
 		 * we must remove another next too. It would clutter
