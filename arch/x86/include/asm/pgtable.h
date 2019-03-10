@@ -251,7 +251,7 @@ static inline int pmd_devmap(pmd_t pmd)
 #ifdef CONFIG_HAVE_ARCH_TRANSPARENT_HUGEPAGE_PUD
 static inline int pud_devmap(pud_t pud)
 {
-	return !!(pud_val(pud) & _PAGE_DEVMAP);
+	return !!(pud_val(pud) & _PAGE_DEVMAP);	//由页表项中的标志判断该页是否为设备映射的方式
 }
 #else
 static inline int pud_devmap(pud_t pud)

@@ -343,8 +343,8 @@ void migration_entry_wait(struct mm_struct *mm, pmd_t *pmd,
 				unsigned long address)
 {
 	spinlock_t *ptl = pte_lockptr(mm, pmd);
-	pte_t *ptep = pte_offset_map(pmd, address);
-	__migration_entry_wait(mm, ptep, ptl);
+	pte_t *ptep = pte_offset_map(pmd, address);	//将该地址在页目录表中建立映射
+	__migration_entry_wait(mm, ptep, ptl);		//进行页表项与swp_entry之间的交换，中间会有等待
 }
 
 void migration_entry_wait_huge(struct vm_area_struct *vma,

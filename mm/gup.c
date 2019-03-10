@@ -80,27 +80,27 @@ static struct page *follow_page_pte(struct vm_area_struct *vma,
 	pte_t *ptep, pte;
 
 retry:
-	if (unlikely(pmd_bad(*pmd)))
+	if (unlikely(pmd_bad(*pmd)))	//如果pmd目录项是损坏的，则退出
 		return no_page_table(vma, flags);
 
-	ptep = pte_offset_map_lock(mm, pmd, address, &ptl);
+	ptep = pte_offset_map_lock(mm, pmd, address, &ptl);	//由pmd目录项与地址，获取页表项指针
 	pte = *ptep;
-	if (!pte_present(pte)) {
+	if (!pte_present(pte)) {	//该页表项不存在
 		swp_entry_t entry;
 		/*
 		 * KSM's break_ksm() relies upon recognizing a ksm page
 		 * even while it is being migrated, so for that case we
 		 * need migration_entry_wait().
 		 */
-		if (likely(!(flags & FOLL_MIGRATION)))
+		if (likely(!(flags & FOLL_MIGRATION)))	//若该页表项是在等待migration
 			goto no_page;
-		if (pte_none(pte))
+		if (pte_none(pte))	//若该页表项为空
 			goto no_page;
-		entry = pte_to_swp_entry(pte);
-		if (!is_migration_entry(entry))
+		entry = pte_to_swp_entry(pte);			//有该页表项构造swp项
+		if (!is_migration_entry(entry))			//若该项不能migration，则直接退出
 			goto no_page;
-		pte_unmap_unlock(ptep, ptl);
-		migration_entry_wait(mm, pmd, address);
+		pte_unmap_unlock(ptep, ptl);			//取消该页表项对特定页的映射
+		migration_entry_wait(mm, pmd, address);	//进行migration
 		goto retry;
 	}
 	if ((flags & FOLL_NUMA) && pte_protnone(pte))
@@ -217,13 +217,13 @@ static struct page *follow_pmd_mask(struct vm_area_struct *vma,
 	struct page *page;
 	struct mm_struct *mm = vma->vm_mm;
 
-	pmd = pmd_offset(pudp, address);
+	pmd = pmd_offset(pudp, address);	//由pud页目录表项与地址获取pmd目录表项
 	/*
 	 * The READ_ONCE() will stabilize the pmdval in a register or
 	 * on the stack so that it will stop changing under the code.
 	 */
-	pmdval = READ_ONCE(*pmd);
-	if (pmd_none(pmdval))
+	pmdval = READ_ONCE(*pmd);	//读取该目录项的值
+	if (pmd_none(pmdval))		//若该项不存在，则退出
 		return no_page_table(vma, flags);
 	if (pmd_huge(pmdval) && vma->vm_flags & VM_HUGETLB) {
 		page = follow_huge_pmd(mm, address, pmd, flags);
@@ -240,7 +240,7 @@ static struct page *follow_pmd_mask(struct vm_area_struct *vma,
 		return no_page_table(vma, flags);
 	}
 retry:
-	if (!pmd_present(pmdval)) {
+	if (!pmd_present(pmdval)) {	//若该项不存在
 		if (likely(!(flags & FOLL_MIGRATION)))
 			return no_page_table(vma, flags);
 		VM_BUG_ON(thp_migration_supported() &&
@@ -252,11 +252,11 @@ retry:
 		 * MADV_DONTNEED may convert the pmd to null because
 		 * mmap_sem is held in read mode
 		 */
-		if (pmd_none(pmdval))
+		if (pmd_none(pmdval))		//若该项不存在，则退出
 			return no_page_table(vma, flags);
 		goto retry;
 	}
-	if (pmd_devmap(pmdval)) {
+	if (pmd_devmap(pmdval)) {		//若是映射设备的目录项
 		ptl = pmd_lock(mm, pmd);
 		page = follow_devmap_pmd(vma, address, pmd, flags);
 		spin_unlock(ptl);
@@ -282,9 +282,9 @@ retry_locked:
 		pmd_migration_entry_wait(mm, pmd);
 		goto retry_locked;
 	}
-	if (unlikely(!pmd_trans_huge(*pmd))) {
+	if (unlikely(!pmd_trans_huge(*pmd))) {	//该目录项非大页项
 		spin_unlock(ptl);
-		return follow_page_pte(vma, address, pmd, flags);
+		return follow_page_pte(vma, address, pmd, flags);	//由pmd目录项与地址获取页表项
 	}
 	if (flags & FOLL_SPLIT) {
 		int ret;
@@ -325,8 +325,8 @@ static struct page *follow_pud_mask(struct vm_area_struct *vma,
 	struct page *page;
 	struct mm_struct *mm = vma->vm_mm;
 
-	pud = pud_offset(p4dp, address);
-	if (pud_none(*pud))
+	pud = pud_offset(p4dp, address);		//由p4d目录项与地址获取pud目录表
+	if (pud_none(*pud))						//若该项不存在，则返回
 		return no_page_table(vma, flags);
 	if (pud_huge(*pud) && vma->vm_flags & VM_HUGETLB) {
 		page = follow_huge_pud(mm, address, pud, flags);
@@ -352,7 +352,7 @@ static struct page *follow_pud_mask(struct vm_area_struct *vma,
 	if (unlikely(pud_bad(*pud)))
 		return no_page_table(vma, flags);
 
-	return follow_pmd_mask(vma, address, pud, flags, page_mask);
+	return follow_pmd_mask(vma, address, pud, flags, page_mask);	//有pud目录表项与地址获取pmd目录表
 }
 
 
@@ -363,14 +363,14 @@ static struct page *follow_p4d_mask(struct vm_area_struct *vma,
 	p4d_t *p4d;
 	struct page *page;
 
-	p4d = p4d_offset(pgdp, address);
-	if (p4d_none(*p4d))
+	p4d = p4d_offset(pgdp, address);	//由页目录项与地址获取p4d目录表
+	if (p4d_none(*p4d))					//该项若不存在在退出
 		return no_page_table(vma, flags);
 	BUILD_BUG_ON(p4d_huge(*p4d));
-	if (unlikely(p4d_bad(*p4d)))
+	if (unlikely(p4d_bad(*p4d)))		//该目录项若存在问题则退出
 		return no_page_table(vma, flags);
 
-	if (is_hugepd(__hugepd(p4d_val(*p4d)))) {
+	if (is_hugepd(__hugepd(p4d_val(*p4d)))) {	//是否为大页目录项呢？
 		page = follow_huge_pd(vma, address,
 				      __hugepd(p4d_val(*p4d)), flags,
 				      P4D_SHIFT);
@@ -378,7 +378,7 @@ static struct page *follow_p4d_mask(struct vm_area_struct *vma,
 			return page;
 		return no_page_table(vma, flags);
 	}
-	return follow_pud_mask(vma, address, p4d, flags, page_mask);
+	return follow_pud_mask(vma, address, p4d, flags, page_mask);	//由p4d目录项与地址获取pud目录表
 }
 
 /**
@@ -405,15 +405,15 @@ struct page *follow_page_mask(struct vm_area_struct *vma,
 	*page_mask = 0;
 
 	/* make this handle hugepd */
-	page = follow_huge_addr(mm, address, flags & FOLL_WRITE);
+	page = follow_huge_addr(mm, address, flags & FOLL_WRITE);	//处理大地址空间
 	if (!IS_ERR(page)) {
 		BUG_ON(flags & FOLL_GET);
 		return page;
 	}
 
-	pgd = pgd_offset(mm, address);
+	pgd = pgd_offset(mm, address);	//获取该进程的页目录表项
 
-	if (pgd_none(*pgd) || unlikely(pgd_bad(*pgd)))
+	if (pgd_none(*pgd) || unlikely(pgd_bad(*pgd)))	//若该页目录项为空或损坏
 		return no_page_table(vma, flags);
 
 	if (pgd_huge(*pgd)) {
@@ -431,7 +431,7 @@ struct page *follow_page_mask(struct vm_area_struct *vma,
 		return no_page_table(vma, flags);
 	}
 
-	return follow_p4d_mask(vma, address, pgd, flags, page_mask);
+	return follow_p4d_mask(vma, address, pgd, flags, page_mask);	//根据地址与页目录项获取p4d目录表
 }
 
 static int get_gate_page(struct mm_struct *mm, unsigned long address,
@@ -546,25 +546,25 @@ static int faultin_page(struct task_struct *tsk, struct vm_area_struct *vma,
 	 * which a read fault here might prevent (a readonly page might get
 	 * reCOWed by userspace write).
 	 */
-	if ((ret & VM_FAULT_WRITE) && !(vma->vm_flags & VM_WRITE))
-		*flags |= FOLL_COW;
+	if ((ret & VM_FAULT_WRITE) && !(vma->vm_flags & VM_WRITE)) //若当前VMA中标志显示当前页不可写，
+		*flags |= FOLL_COW;									   //但用户又执行了页的写操作，那么内核会执行COW操作。
 	return 0;
 }
 
 static int check_vma_flags(struct vm_area_struct *vma, unsigned long gup_flags)
 {
 	vm_flags_t vm_flags = vma->vm_flags;
-	int write = (gup_flags & FOLL_WRITE);
-	int foreign = (gup_flags & FOLL_REMOTE);
+	int write = (gup_flags & FOLL_WRITE);		//页表项pte是否可写的标志
+	int foreign = (gup_flags & FOLL_REMOTE);	//是否处理的是当前进程的内存
 
-	if (vm_flags & (VM_IO | VM_PFNMAP))
+	if (vm_flags & (VM_IO | VM_PFNMAP))			//是I/O映射或只是PFN 页帧号
 		return -EFAULT;
 
-	if (gup_flags & FOLL_ANON && !vma_is_anonymous(vma))
+	if (gup_flags & FOLL_ANON && !vma_is_anonymous(vma))	//若为文件映射的区间或匿名映射vma，则返回错误
 		return -EFAULT;
 
 	if (write) {
-		if (!(vm_flags & VM_WRITE)) {
+		if (!(vm_flags & VM_WRITE)) {	//若该vma不能写
 			if (!(gup_flags & FOLL_FORCE))
 				return -EFAULT;
 			/*
@@ -655,7 +655,7 @@ static int check_vma_flags(struct vm_area_struct *vma, unsigned long gup_flags)
  * you need some special @gup_flags.
  */
 static long __get_user_pages(struct task_struct *tsk, struct mm_struct *mm,
-		unsigned long start, unsigned long nr_pages,
+		unsigned long start, unsigned long nr_pages,	//该区间包含多少个page
 		unsigned int gup_flags, struct page **pages,
 		struct vm_area_struct **vmas, int *nonblocking)
 {
@@ -675,7 +675,7 @@ static long __get_user_pages(struct task_struct *tsk, struct mm_struct *mm,
 	 */
 	if (!(gup_flags & FOLL_FORCE))
 		gup_flags |= FOLL_NUMA;
-
+	//下面while循环的目的是：为虚拟地址空间(start为起始地址)从请求页队列中获取每个页，反复操作直到满足构建所有内存映射。
 	do {
 		struct page *page;
 		unsigned int foll_flags = gup_flags;
@@ -683,8 +683,8 @@ static long __get_user_pages(struct task_struct *tsk, struct mm_struct *mm,
 
 		/* first iteration or cross vma bound */
 		if (!vma || start >= vma->vm_end) {
-			vma = find_extend_vma(mm, start);
-			if (!vma && in_gate_area(mm, start)) {
+			vma = find_extend_vma(mm, start);		//从进程的内存管理结构中，找到合适的vma
+			if (!vma && in_gate_area(mm, start)) {	//没有找到vma，但是该区间在gate_vma中，则使用gate页面
 				int ret;
 				ret = get_gate_page(mm, start & PAGE_MASK,
 						gup_flags, &vma,
@@ -697,7 +697,7 @@ static long __get_user_pages(struct task_struct *tsk, struct mm_struct *mm,
 
 			if (!vma || check_vma_flags(vma, gup_flags))
 				return i ? : -EFAULT;
-			if (is_vm_hugetlb_page(vma)) {
+			if (is_vm_hugetlb_page(vma)) {	//是否为大页表 VM_HUGETLB
 				i = follow_hugetlb_page(mm, vma, pages, vmas,
 						&start, &nr_pages, i,
 						gup_flags, nonblocking);
@@ -709,13 +709,13 @@ retry:
 		 * If we have a pending SIGKILL, don't keep faulting pages and
 		 * potentially allocating memory.
 		 */
-		if (unlikely(fatal_signal_pending(current)))
+		if (unlikely(fatal_signal_pending(current)))	//判断当前进程是否收到KILL的信号，若收到则直接退出
 			return i ? i : -ERESTARTSYS;
-		cond_resched();
-		page = follow_page_mask(vma, start, foll_flags, &page_mask);
-		if (!page) {
-			int ret;
-			ret = faultin_page(tsk, vma, start, &foll_flags,
+		cond_resched();									//尝试对当前进程进行调度，优化系统对其他任务的响应
+		page = follow_page_mask(vma, start, foll_flags, &page_mask);	//通过查询各级页表，获取虚拟地址对应的物理页
+		if (!page) {	//1)页表中不存在物理页，即缺页；2)访问语义标志foll_flags对应的权限违反了内存页的权限时；
+			int ret;	//上述两种情况会导致page为NULL。
+			ret = faultin_page(tsk, vma, start, &foll_flags,	//处理页故障
 					nonblocking);
 			switch (ret) {
 			case 0:

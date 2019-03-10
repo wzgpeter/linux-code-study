@@ -188,7 +188,7 @@ static struct vm_area_struct *remove_vma(struct vm_area_struct *vma)
 
 static int do_brk_flags(unsigned long addr, unsigned long request, unsigned long flags,
 		struct list_head *uf);
-SYSCALL_DEFINE1(brk, unsigned long, brk)
+SYSCALL_DEFINE1(brk, unsigned long, brk) 	//brk系统调用函数
 {
 	unsigned long retval;
 	unsigned long newbrk, oldbrk;
@@ -233,7 +233,7 @@ SYSCALL_DEFINE1(brk, unsigned long, brk)
 		goto set_brk;
 
 	/* Always allow shrinking brk. */
-	if (brk <= mm->brk) {
+	if (brk <= mm->brk) {	//若地址变小，则进行shrink的操作，释放掉一部分内存映射的
 		if (!do_munmap(mm, newbrk, oldbrk-newbrk, &uf))
 			goto set_brk;
 		goto out;
@@ -254,7 +254,7 @@ set_brk:
 	up_write(&mm->mmap_sem);
 	userfaultfd_unmap_complete(mm, &uf);
 	if (populate)
-		mm_populate(oldbrk, newbrk - oldbrk);
+		mm_populate(oldbrk, newbrk - oldbrk);	//VM_LOCKED置位，就需要马上分配物理内存并建立映射，一般不会立即分配页面，要等到用时才分配的
 	return brk;
 
 out:
@@ -496,13 +496,15 @@ anon_vma_interval_tree_post_update_vma(struct vm_area_struct *vma)
 		anon_vma_interval_tree_insert(avc, &avc->anon_vma->rb_root);
 }
 
+
+//循环遍历mm->mm_rb用户进程结构中红黑树中的vma，根据地址找到最合适的插入到红黑树的节点
 static int find_vma_links(struct mm_struct *mm, unsigned long addr,
 		unsigned long end, struct vm_area_struct **pprev,
 		struct rb_node ***rb_link, struct rb_node **rb_parent)
 {
 	struct rb_node **__rb_link, *__rb_parent, *rb_prev;
 
-	__rb_link = &mm->mm_rb.rb_node;
+	__rb_link = &mm->mm_rb.rb_node;	//用户进程结构中的VMA红黑树的根节点
 	rb_prev = __rb_parent = NULL;
 
 	while (*__rb_link) {
@@ -1160,7 +1162,7 @@ struct vm_area_struct *vma_merge(struct mm_struct *mm,
 				is_mergeable_anon_vma(prev->anon_vma,	//检查一下前项区域与后项区域的匿名映射是否可以合并
 						      next->anon_vma, NULL)) {
 							/* cases 1, 6 */
-			err = __vma_adjust(prev, prev->vm_start,	//次处是进行区域合并的真正函数
+			err = __vma_adjust(prev, prev->vm_start,	//此处是进行区域合并的真正函数
 					 next->vm_end, prev->vm_pgoff, NULL,
 					 prev);
 		} else					/* cases 2, 5, 7 */

@@ -4807,7 +4807,7 @@ follow_huge_pgd(struct mm_struct *mm, unsigned long address, pgd_t *pgd, int fla
 	if (flags & FOLL_GET)
 		return NULL;
 
-	return pte_page(*(pte_t *)pgd) + ((address & ~PGDIR_MASK) >> PAGE_SHIFT);
+	return pte_page(*(pte_t *)pgd) + ((address & ~PGDIR_MASK) >> PAGE_SHIFT);	//由地址获取特定的页表项
 }
 
 bool isolate_huge_page(struct page *page, struct list_head *list)

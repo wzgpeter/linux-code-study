@@ -273,9 +273,9 @@ static inline swp_entry_t pmd_to_swp_entry(pmd_t pmd)
 {
 	swp_entry_t arch_entry;
 
-	if (pmd_swp_soft_dirty(pmd))
-		pmd = pmd_swp_clear_soft_dirty(pmd);
-	arch_entry = __pmd_to_swp_entry(pmd);
+	if (pmd_swp_soft_dirty(pmd))	//该pmd目录项是修改过的吗？
+		pmd = pmd_swp_clear_soft_dirty(pmd);	//若是将该dirty标志清除
+	arch_entry = __pmd_to_swp_entry(pmd);		//获取该目录项的值
 	return swp_entry(__swp_type(arch_entry), __swp_offset(arch_entry));
 }
 
