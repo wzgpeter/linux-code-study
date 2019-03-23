@@ -33,7 +33,7 @@ static inline pgtable_t pte_alloc_one(struct mm_struct *mm, unsigned long addres
 	struct page *page;
 	pte_t *pte;
 
-	page = alloc_pages(GFP_KERNEL|__GFP_ZERO, 0);
+	page = alloc_pages(GFP_KERNEL|__GFP_ZERO, 0);	//分配一物理页面准备作为一个页表使用
 	if(!page)
 		return NULL;
 	if (!pgtable_page_ctor(page)) {

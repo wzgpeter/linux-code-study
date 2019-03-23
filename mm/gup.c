@@ -65,7 +65,7 @@ static int follow_pfn_pte(struct vm_area_struct *vma, unsigned long address,
  * after we've gone through a COW cycle and they are dirty.
  */
 static inline bool can_follow_write_pte(pte_t pte, unsigned int flags)
-{
+{	//该页可写，或正在经历COW过程且该页是脏的时候
 	return pte_write(pte) ||
 		((flags & FOLL_FORCE) && (flags & FOLL_COW) && pte_dirty(pte));
 }
@@ -105,7 +105,7 @@ retry:
 	}
 	if ((flags & FOLL_NUMA) && pte_protnone(pte))
 		goto no_page;
-	if ((flags & FOLL_WRITE) && !can_follow_write_pte(pte, flags)) {
+	if ((flags & FOLL_WRITE) && !can_follow_write_pte(pte, flags)) { //该页写权限操作错误：该页不可写且不在COW过程中。
 		pte_unmap_unlock(ptep, ptl);
 		return NULL;
 	}
@@ -515,7 +515,7 @@ static int faultin_page(struct task_struct *tsk, struct vm_area_struct *vma,
 		fault_flags |= FAULT_FLAG_TRIED;
 	}
 
-	ret = handle_mm_fault(vma, address, fault_flags);
+	ret = handle_mm_fault(vma, address, fault_flags);	//第一次分配page成功，则返回0
 	if (ret & VM_FAULT_ERROR) {
 		int err = vm_fault_to_errno(ret, *flags);
 
@@ -546,8 +546,8 @@ static int faultin_page(struct task_struct *tsk, struct vm_area_struct *vma,
 	 * which a read fault here might prevent (a readonly page might get
 	 * reCOWed by userspace write).
 	 */
-	if ((ret & VM_FAULT_WRITE) && !(vma->vm_flags & VM_WRITE)) //若当前VMA中标志显示当前页不可写，
-		*flags |= FOLL_COW;									   //但用户又执行了页的写操作，那么内核会执行COW操作。
+	if ((ret & VM_FAULT_WRITE) && !(vma->vm_flags & VM_WRITE)) //若当前VMA中标志显示当前页不可写，用户又执行了页的写操作
+		*flags |= FOLL_COW;									   //那么内核会执行COW操作。
 	return 0;
 }
 
@@ -656,7 +656,7 @@ static int check_vma_flags(struct vm_area_struct *vma, unsigned long gup_flags)
  */
 static long __get_user_pages(struct task_struct *tsk, struct mm_struct *mm,
 		unsigned long start, unsigned long nr_pages,	//该区间包含多少个page
-		unsigned int gup_flags, struct page **pages,
+		unsigned int gup_flags, struct page **pages,	//**pages -- 返回的新建立的page-cache
 		struct vm_area_struct **vmas, int *nonblocking)
 {
 	long i = 0;
@@ -711,7 +711,7 @@ retry:
 		 */
 		if (unlikely(fatal_signal_pending(current)))	//判断当前进程是否收到KILL的信号，若收到则直接退出
 			return i ? i : -ERESTARTSYS;
-		cond_resched();									//尝试对当前进程进行调度，优化系统对其他任务的响应
+		cond_resched();									//尝试对当前进程进行调度，优化系统对其他任务的响应，此处会导致竞态情况的发生。
 		page = follow_page_mask(vma, start, foll_flags, &page_mask);	//通过查询各级页表，获取虚拟地址对应的物理页
 		if (!page) {	//1)页表中不存在物理页，即缺页；2)访问语义标志foll_flags对应的权限违反了内存页的权限时；
 			int ret;	//上述两种情况会导致page为NULL。

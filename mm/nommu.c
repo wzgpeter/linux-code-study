@@ -163,7 +163,7 @@ finish_or_fault:
 long get_user_pages(unsigned long start, unsigned long nr_pages,
 		    unsigned int gup_flags, struct page **pages,
 		    struct vm_area_struct **vmas)
-{	//申请一系列的物理内存页并在页表中建立相应的映射关系
+{	//获取一系列的物理内存页并在页表中建立相应的映射关系，返回的是pages[]数组
 	return __get_user_pages(current, current->mm, start, nr_pages,
 				gup_flags, pages, vmas, NULL);
 }

@@ -231,12 +231,12 @@ __do_page_fault(struct mm_struct *mm, unsigned long addr, unsigned int fsr,
 	struct vm_area_struct *vma;
 	int fault;
 
-	vma = find_vma(mm, addr);
+	vma = find_vma(mm, addr);	//通过失效地址找到对应的vma
 	fault = VM_FAULT_BADMAP;
-	if (unlikely(!vma))
+	if (unlikely(!vma))			//如果没有找到对应的vma，说明该地址还没有在进程的地址空间中，直接出错返回BADMAP
 		goto out;
-	if (unlikely(vma->vm_start > addr))
-		goto check_stack;
+	if (unlikely(vma->vm_start > addr))	//find_vma()中的vma->vm_start应该比addr小，为什么这里会有这种可能呢？
+		goto check_stack;	//可能是在用户态栈中的fault
 
 	/*
 	 * Ok, we have a good vm_area for this
@@ -281,31 +281,31 @@ do_page_fault(unsigned long addr, unsigned int fsr, struct pt_regs *regs)
 	 * If we're in an interrupt or have no user
 	 * context, we must not take the fault..
 	 */
-	if (faulthandler_disabled() || !mm)
-		goto no_context;
+	if (faulthandler_disabled() || !mm)	//当前发生fault的任务pagefault关闭了或处于原子操作中：中断程序，可延迟函数，禁用内核抢占的临界区。
+		goto no_context;				//这些情况都是程序没有用户空间的，是内核线程，需要特殊处理
 
 	if (user_mode(regs))
-		flags |= FAULT_FLAG_USER;
+		flags |= FAULT_FLAG_USER;		//该fault发生在用户空间
 	if (fsr & FSR_WRITE)
-		flags |= FAULT_FLAG_WRITE;
+		flags |= FAULT_FLAG_WRITE;		//该fault发生在写访问的时候产生的
 
 	/*
 	 * As per x86, we may deadlock here.  However, since the kernel only
 	 * validly references user space from well defined areas of the code,
 	 * we can bug out early if this is from code which shouldn't.
 	 */
-	if (!down_read_trylock(&mm->mmap_sem)) {
+	if (!down_read_trylock(&mm->mmap_sem)) {	//判断当前进程的mm的读写信号量是否可以获取：1-表示获取锁成功；0-表示获取锁失败
 		if (!user_mode(regs) && !search_exception_tables(regs->ARM_pc))
-			goto no_context;
+			goto no_context;		//若是内核空间，在exception表中查不到fault地址，则跳转到no_context，发送信号去杀死产生fault的进程
 retry:
-		down_read(&mm->mmap_sem);
-	} else {
+		down_read(&mm->mmap_sem);	//信号量获取失败，且fault发生在用户空间，则休眠等待锁持有者释放；若是内核空间，在exception表中能查到该地址，则休眠等待
+	} else {	//读写信号量获取成功
 		/*
 		 * The above down_read_trylock() might have succeeded in
 		 * which case, we'll have missed the might_sleep() from
 		 * down_read()
 		 */
-		might_sleep();
+		might_sleep();				//进行休眠，发生调度
 #ifdef CONFIG_DEBUG_VM
 		if (!user_mode(regs) &&
 		    !search_exception_tables(regs->ARM_pc))
@@ -313,15 +313,15 @@ retry:
 #endif
 	}
 
-	fault = __do_page_fault(mm, addr, fsr, flags, tsk);
+	fault = __do_page_fault(mm, addr, fsr, flags, tsk);	//page fault处理的主函数
 
 	/* If we need to retry but a fatal signal is pending, handle the
 	 * signal first. We do not need to release the mmap_sem because
 	 * it would already be released in __lock_page_or_retry in
 	 * mm/filemap.c. */
-	if ((fault & VM_FAULT_RETRY) && fatal_signal_pending(current)) {
+	if ((fault & VM_FAULT_RETRY) && fatal_signal_pending(current)) {	//如果我们需要RETRY，但是有fatal信号在pending等待处理，则先处理该信号。
 		if (!user_mode(regs))
-			goto no_context;
+			goto no_context;	//若不是用户空间的fault，那么跳转到no_context，直接杀死当前内核线程
 		return 0;
 	}
 
@@ -351,22 +351,22 @@ retry:
 		}
 	}
 
-	up_read(&mm->mmap_sem);
+	up_read(&mm->mmap_sem);		//释放当前进程mm的读写信号量
 
 	/*
 	 * Handle the "normal" case first - VM_FAULT_MAJOR
 	 */
-	if (likely(!(fault & (VM_FAULT_ERROR | VM_FAULT_BADMAP | VM_FAULT_BADACCESS))))
+	if (likely(!(fault & (VM_FAULT_ERROR | VM_FAULT_BADMAP | VM_FAULT_BADACCESS))))	//没有错误表明缺页中断处理完成
 		return 0;
 
 	/*
 	 * If we are in kernel mode at this point, we
 	 * have no context to handle this fault with.
 	 */
-	if (!user_mode(regs))
+	if (!user_mode(regs))	//到此处表示处于内核线程中，直接跳转去杀死当前内核线程
 		goto no_context;
 
-	if (fault & VM_FAULT_OOM) {
+	if (fault & VM_FAULT_OOM) {	//如果page fault处理时碰到内存空间不足，则选择一个最坏的进程来杀死，从而腾出空间来
 		/*
 		 * We ran out of memory, call the OOM killer, and return to
 		 * userspace (which will retry the fault, or kill us if we
@@ -376,7 +376,7 @@ retry:
 		return 0;
 	}
 
-	if (fault & VM_FAULT_SIGBUS) {
+	if (fault & VM_FAULT_SIGBUS) {	//发生总线地址错误，即物理地址错误问题
 		/*
 		 * We had some memory, but were unable to
 		 * successfully fix up this page fault.
@@ -393,11 +393,11 @@ retry:
 			SEGV_ACCERR : SEGV_MAPERR;
 	}
 
-	__do_user_fault(tsk, addr, fsr, sig, code, regs);
+	__do_user_fault(tsk, addr, fsr, sig, code, regs);	//用户态错误，发个信号杀死用户进程
 	return 0;
 
 no_context:
-	__do_kernel_fault(mm, addr, fsr, regs);
+	__do_kernel_fault(mm, addr, fsr, regs);				//内核的错误，发送OOP
 	return 0;
 }
 #else					/* CONFIG_MMU */

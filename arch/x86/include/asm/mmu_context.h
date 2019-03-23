@@ -319,7 +319,7 @@ static inline bool arch_vma_access_permitted(struct vm_area_struct *vma,
 	if (execute)
 		return true;
 	/* allow access if the VMA is not one from this process */
-	if (foreign || vma_is_foreign(vma))
+	if (foreign || vma_is_foreign(vma))	//该fault事件是否来自当前进程？该vma是否来自当前进程？
 		return true;
 	return __pkru_allows_pkey(vma_pkey(vma), write);
 }

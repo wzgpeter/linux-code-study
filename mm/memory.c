@@ -3572,11 +3572,11 @@ static int do_fault_around(struct vm_fault *vmf)
 	pgoff_t end_pgoff;
 	int off, ret = 0;
 
-	nr_pages = READ_ONCE(fault_around_bytes) >> PAGE_SHIFT;
+	nr_pages = READ_ONCE(fault_around_bytes) >> PAGE_SHIFT;	//要提前建立的映射的页数目
 	mask = ~(nr_pages * PAGE_SIZE - 1) & PAGE_MASK;
 
-	vmf->address = max(address & mask, vmf->vma->vm_start);
-	off = ((address - vmf->address) >> PAGE_SHIFT) & (PTRS_PER_PTE - 1);
+	vmf->address = max(address & mask, vmf->vma->vm_start);	//发生缺页异常时的地址值（虚地址）
+	off = ((address - vmf->address) >> PAGE_SHIFT) & (PTRS_PER_PTE - 1); //off对应的是页表中的偏移多少项的数目相对于缺页地址所在页表项
 	start_pgoff -= off;
 
 	/*
@@ -3589,15 +3589,17 @@ static int do_fault_around(struct vm_fault *vmf)
 	end_pgoff = min3(end_pgoff, vma_pages(vmf->vma) + vmf->vma->vm_pgoff - 1,
 			start_pgoff + nr_pages - 1);
 
-	if (pmd_none(*vmf->pmd)) {
-		vmf->prealloc_pte = pte_alloc_one(vmf->vma->vm_mm,
+	//start_pgoff与end_pgoff是要进行提前映射的区域的起始点与结束点
+
+	if (pmd_none(*vmf->pmd)) {	//如果缺页异常地址所在pmd表项为空，对应页表不存在，那么需要分配相应的页表（pm表中某项指向的页表）
+		vmf->prealloc_pte = pte_alloc_one(vmf->vma->vm_mm,	//分配一页作为页表，并映射到pmd对应表项中
 						  vmf->address);
 		if (!vmf->prealloc_pte)
 			goto out;
 		smp_wmb(); /* See comment in __pte_alloc() */
 	}
 
-	vmf->vma->vm_ops->map_pages(vmf, start_pgoff, end_pgoff);
+	vmf->vma->vm_ops->map_pages(vmf, start_pgoff, end_pgoff); //建立缺页异常地址周围区域与page-cache的映射关系
 
 	/* Huge page is mapped? Page fault is solved */
 	if (pmd_trans_huge(*vmf->pmd)) {
@@ -3629,14 +3631,14 @@ static int do_read_fault(struct vm_fault *vmf)
 	 * Let's call ->map_pages() first and use ->fault() as fallback
 	 * if page by the offset is not ready to be mapped (cold cache or
 	 * something).
-	 */
+	 */								//fault_around_bytes为全局变量，决定了提前建立的映射的页数量
 	if (vma->vm_ops->map_pages && fault_around_bytes >> PAGE_SHIFT > 1) {
-		ret = do_fault_around(vmf);
+		ret = do_fault_around(vmf);	//围绕缺页异常地址周围提前建立进程地址空间和page-cache的映射关系，减少异常中断次数，提高效率
 		if (ret)
 			return ret;
 	}
 
-	ret = __do_fault(vmf);
+	ret = __do_fault(vmf);			//创建新的page-cache
 	if (unlikely(ret & (VM_FAULT_ERROR | VM_FAULT_NOPAGE | VM_FAULT_RETRY)))
 		return ret;
 
@@ -3735,12 +3737,12 @@ static int do_fault(struct vm_fault *vmf)
 	/* The VMA was not fully populated on mmap() or missing VM_DONTEXPAND */
 	if (!vma->vm_ops->fault)
 		ret = VM_FAULT_SIGBUS;
-	else if (!(vmf->flags & FAULT_FLAG_WRITE))
+	else if (!(vmf->flags & FAULT_FLAG_WRITE))	//发生只读异常
 		ret = do_read_fault(vmf);
-	else if (!(vma->vm_flags & VM_SHARED))
+	else if (!(vma->vm_flags & VM_SHARED))		//这是一个私有映射，且发生了写时复制COW造成的异常
 		ret = do_cow_fault(vmf);
 	else
-		ret = do_shared_fault(vmf);
+		ret = do_shared_fault(vmf);				//其余都是在共享映射时发生了写缺页异常
 
 	/* preallocated pagetable is unused: free it */
 	if (vmf->prealloc_pte) {
@@ -3927,14 +3929,14 @@ static int handle_pte_fault(struct vm_fault *vmf)
 {
 	pte_t entry;
 
-	if (unlikely(pmd_none(*vmf->pmd))) {
+	if (unlikely(pmd_none(*vmf->pmd))) {	//pmd表项的内容为NULL
 		/*
 		 * Leave __pte_alloc() until later: because vm_ops->fault may
 		 * want to allocate huge page, and if we expose page table
 		 * for an instant, it will be difficult to retract from
 		 * concurrent faults and from rmap lookups.
 		 */
-		vmf->pte = NULL;
+		vmf->pte = NULL;					//则pte页表项内容为NULL
 	} else {
 		/* See comment in pte_alloc_one_map() */
 		if (pmd_devmap_trans_unstable(vmf->pmd))
@@ -3957,22 +3959,23 @@ static int handle_pte_fault(struct vm_fault *vmf)
 		 * ptl lock held. So here a barrier will do.
 		 */
 		barrier();
-		if (pte_none(vmf->orig_pte)) {
+		if (pte_none(vmf->orig_pte)) {	//如果pte页表项为空
 			pte_unmap(vmf->pte);
 			vmf->pte = NULL;
 		}
 	}
 
-	if (!vmf->pte) {
-		if (vma_is_anonymous(vmf->vma))
+	if (!vmf->pte) {	//该pte页表项为空，没有物理页面映射，则为真正的缺页异常
+		if (vma_is_anonymous(vmf->vma))		//若为匿名页面
 			return do_anonymous_page(vmf);
 		else
-			return do_fault(vmf);
+			return do_fault(vmf);			//为真正的缺页，处理缺页异常。为文件映射缺页中断
 	}
 
-	if (!pte_present(vmf->orig_pte))
+	if (!pte_present(vmf->orig_pte))		//pte不为空，但该pte没有映射物理页面，说明该页被交换到swap分区。
 		return do_swap_page(vmf);
 
+	//=========== 以下是页面在物理内存中的情况 ==========================
 	if (pte_protnone(vmf->orig_pte) && vma_is_accessible(vmf->vma))
 		return do_numa_page(vmf);
 
@@ -3981,12 +3984,12 @@ static int handle_pte_fault(struct vm_fault *vmf)
 	entry = vmf->orig_pte;
 	if (unlikely(!pte_same(*vmf->pte, entry)))
 		goto unlock;
-	if (vmf->flags & FAULT_FLAG_WRITE) {
-		if (!pte_write(entry))
-			return do_wp_page(vmf);
-		entry = pte_mkdirty(entry);
+	if (vmf->flags & FAULT_FLAG_WRITE) {	//该fault是由于写访问造成的，此时页是在内存中的。
+		if (!pte_write(entry))				//该pte页表项对应的页是不可写的，因此写访问造成的fault
+			return do_wp_page(vmf);			//进行写时复制操作
+		entry = pte_mkdirty(entry);			//将该页表项置dirty标志
 	}
-	entry = pte_mkyoung(entry);
+	entry = pte_mkyoung(entry);				//设置该页表项对应的页年轻，减少它被交换到磁盘上的机会
 	if (ptep_set_access_flags(vmf->vma, vmf->address, vmf->pte, entry,
 				vmf->flags & FAULT_FLAG_WRITE)) {
 		update_mmu_cache(vmf->vma, vmf->address, vmf->pte);
@@ -4012,7 +4015,7 @@ unlock:
  * return value.  See filemap_fault() and __lock_page_or_retry().
  */
 static int __handle_mm_fault(struct vm_area_struct *vma, unsigned long address,
-		unsigned int flags)
+		unsigned int flags)	//进行各级页目录表项与页表项的处理
 {
 	struct vm_fault vmf = {
 		.vma = vma,
@@ -4027,7 +4030,7 @@ static int __handle_mm_fault(struct vm_area_struct *vma, unsigned long address,
 	p4d_t *p4d;
 	int ret;
 
-	pgd = pgd_offset(mm, address);
+	pgd = pgd_offset(mm, address);		//根据address，获取页目录中特定目录项
 	p4d = p4d_alloc(mm, pgd, address);
 	if (!p4d)
 		return VM_FAULT_OOM;
@@ -4105,7 +4108,7 @@ int handle_mm_fault(struct vm_area_struct *vma, unsigned long address,
 {
 	int ret;
 
-	__set_current_state(TASK_RUNNING);
+	__set_current_state(TASK_RUNNING);	//为什么此处设置当前进程为RUNNING状态?
 
 	count_vm_event(PGFAULT);
 	count_memcg_event_mm(vma->vm_mm, PGFAULT);
@@ -4125,8 +4128,8 @@ int handle_mm_fault(struct vm_area_struct *vma, unsigned long address,
 	if (flags & FAULT_FLAG_USER)
 		mem_cgroup_oom_enable();
 
-	if (unlikely(is_vm_hugetlb_page(vma)))
-		ret = hugetlb_fault(vma->vm_mm, vma, address, flags);
+	if (unlikely(is_vm_hugetlb_page(vma)))	//判断当前vma是否是大页表
+		ret = hugetlb_fault(vma->vm_mm, vma, address, flags);	//若是大页表，则进行大页目录表项等的处理，并申请大页内存
 	else
 		ret = __handle_mm_fault(vma, address, flags);
 

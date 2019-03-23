@@ -497,7 +497,7 @@ anon_vma_interval_tree_post_update_vma(struct vm_area_struct *vma)
 }
 
 
-//循环遍历mm->mm_rb用户进程结构中红黑树中的vma，根据地址找到最合适的插入到红黑树的节点
+//循环遍历mm->mm_rb用户进程结构中红黑树中所有的vma，根据地址找到最合适的插入到红黑树的节点
 static int find_vma_links(struct mm_struct *mm, unsigned long addr,
 		unsigned long end, struct vm_area_struct **pprev,
 		struct rb_node ***rb_link, struct rb_node **rb_parent)
