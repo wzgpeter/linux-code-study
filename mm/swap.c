@@ -462,7 +462,7 @@ void lru_cache_add_active_or_unevictable(struct page *page,
 	VM_BUG_ON_PAGE(PageLRU(page), page);
 
 	if (likely((vma->vm_flags & (VM_LOCKED | VM_SPECIAL)) != VM_LOCKED))
-		SetPageActive(page);
+		SetPageActive(page);	//若page未锁定则置active标志
 	else if (!TestSetPageMlocked(page)) {
 		/*
 		 * We use the irq-unsafe __mod_zone_page_stat because this
@@ -473,7 +473,7 @@ void lru_cache_add_active_or_unevictable(struct page *page,
 				    hpage_nr_pages(page));
 		count_vm_event(UNEVICTABLE_PGMLOCKED);
 	}
-	lru_cache_add(page);
+	lru_cache_add(page);	//将该page加入链表中
 }
 
 /*

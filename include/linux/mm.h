@@ -925,9 +925,9 @@ static inline void get_page(struct page *page)
 	page_ref_inc(page);
 }
 
-static inline void put_page(struct page *page)
+static inline void put_page(struct page *page) //减少内核中引用该page的次数，如果减到0则表示该页面空闲将要释放了
 {
-	page = compound_head(page);
+	page = compound_head(page);		//若是复合页，则先找到该复合页的首页指针
 
 	/*
 	 * For devmap managed pages we need to catch refcount transition from
@@ -938,8 +938,8 @@ static inline void put_page(struct page *page)
 	if (put_devmap_managed_page(page))
 		return;
 
-	if (put_page_testzero(page))
-		__put_page(page);
+	if (put_page_testzero(page))	//该页面的引用计数是否为0
+		__put_page(page);			//为0，则释放该页
 }
 
 #if defined(CONFIG_SPARSEMEM) && !defined(CONFIG_SPARSEMEM_VMEMMAP)
@@ -1260,7 +1260,7 @@ static inline void clear_page_pfmemalloc(struct page *page)
  * just gets major/minor fault counters bumped up.
  */
 
-#define VM_FAULT_OOM	0x0001
+#define VM_FAULT_OOM	0x0001	//该返回值表明当前系统中没有足够内存
 #define VM_FAULT_SIGBUS	0x0002
 #define VM_FAULT_MAJOR	0x0004
 #define VM_FAULT_WRITE	0x0008	/* Special case for get_user_pages */

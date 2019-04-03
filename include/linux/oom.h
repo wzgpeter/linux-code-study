@@ -90,7 +90,7 @@ static inline bool mm_is_oom_victim(struct mm_struct *mm)
  */
 static inline int check_stable_address_space(struct mm_struct *mm)
 {
-	if (unlikely(test_bit(MMF_UNSTABLE, &mm->flags)))
+	if (unlikely(test_bit(MMF_UNSTABLE, &mm->flags)))	//特定的mm代表的地址空间不稳定可靠了
 		return VM_FAULT_SIGBUS;
 	return 0;
 }

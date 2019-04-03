@@ -1017,9 +1017,9 @@ void page_move_anon_rmap(struct page *page, struct vm_area_struct *vma)
 
 /**
  * __page_set_anon_rmap - set up new anonymous rmap
- * @page:	Page to add to rmap	
+ * @page:	Page to add to rmap
  * @vma:	VM area to add page to.
- * @address:	User virtual address of the mapping	
+ * @address:	User virtual address of the mapping
  * @exclusive:	the page is exclusively owned by the current process
  */
 static void __page_set_anon_rmap(struct page *page,
@@ -1029,7 +1029,7 @@ static void __page_set_anon_rmap(struct page *page,
 
 	BUG_ON(!anon_vma);
 
-	if (PageAnon(page))
+	if (PageAnon(page))	//判断当前页面是否是匿名页面
 		return;
 
 	/*
@@ -1041,7 +1041,7 @@ static void __page_set_anon_rmap(struct page *page,
 		anon_vma = anon_vma->root;
 
 	anon_vma = (void *) anon_vma + PAGE_MAPPING_ANON;
-	page->mapping = (struct address_space *) anon_vma;
+	page->mapping = (struct address_space *) anon_vma;	//mapping指向匿名页面的地址空间数据结构anon_vma{}
 	page->index = linear_page_index(vma, address);
 }
 
@@ -1148,25 +1148,25 @@ void do_page_add_anon_rmap(struct page *page,
  * Page does not have to be locked.
  */
 void page_add_new_anon_rmap(struct page *page,
-	struct vm_area_struct *vma, unsigned long address, bool compound)
+	struct vm_area_struct *vma, unsigned long address, bool compound)	//建立page与匿名页ana_vma{}的映射关系
 {
 	int nr = compound ? hpage_nr_pages(page) : 1;
 
 	VM_BUG_ON_VMA(address < vma->vm_start || address >= vma->vm_end, vma);
-	__SetPageSwapBacked(page);
+	__SetPageSwapBacked(page);							//表示这个页面可以swap到磁盘
 	if (compound) {
 		VM_BUG_ON_PAGE(!PageTransHuge(page), page);
 		/* increment count (starts at -1) */
-		atomic_set(compound_mapcount_ptr(page), 0);
+		atomic_set(compound_mapcount_ptr(page), 0);		//置compound_mapcount为0
 		__inc_node_page_state(page, NR_ANON_THPS);
 	} else {
 		/* Anon THP always mapped first with PMD */
-		VM_BUG_ON_PAGE(PageTransCompound(page), page);
+		VM_BUG_ON_PAGE(PageTransCompound(page), page);	//检测该页是否是复合页
 		/* increment count (starts at -1) */
-		atomic_set(&page->_mapcount, 0);
+		atomic_set(&page->_mapcount, 0);				//设置该页的引用计数为0
 	}
-	__mod_node_page_state(page_pgdat(page), NR_ANON_MAPPED, nr);
-	__page_set_anon_rmap(page, vma, address, 1);
+	__mod_node_page_state(page_pgdat(page), NR_ANON_MAPPED, nr);	//增加page页面所在的zone{}的匿名页面计数值
+	__page_set_anon_rmap(page, vma, address, 1);					//设置该页面位匿名映射: page->mapping = anon_vma{}
 }
 
 /**
@@ -1176,15 +1176,15 @@ void page_add_new_anon_rmap(struct page *page,
  *
  * The caller needs to hold the pte lock.
  */
-void page_add_file_rmap(struct page *page, bool compound)
+void page_add_file_rmap(struct page *page, bool compound)	//该页表项对应的是文件页的映射，添加到缓冲中
 {
 	int i, nr = 1;
 
-	VM_BUG_ON_PAGE(compound && !PageTransHuge(page), page);
+	VM_BUG_ON_PAGE(compound && !PageTransHuge(page), page);	//检查是否为透明大页
 	lock_page_memcg(page);
-	if (compound && PageTransHuge(page)) {
+	if (compound && PageTransHuge(page)) {					//为复合页且是透明大页
 		for (i = 0, nr = 0; i < HPAGE_PMD_NR; i++) {
-			if (atomic_inc_and_test(&page[i]._mapcount))
+			if (atomic_inc_and_test(&page[i]._mapcount))	//若是则更新该page相关统计信息
 				nr++;
 		}
 		if (!atomic_inc_and_test(compound_mapcount_ptr(page)))
@@ -1192,10 +1192,10 @@ void page_add_file_rmap(struct page *page, bool compound)
 		VM_BUG_ON_PAGE(!PageSwapBacked(page), page);
 		__inc_node_page_state(page, NR_SHMEM_PMDMAPPED);
 	} else {
-		if (PageTransCompound(page) && page_mapping(page)) {
+		if (PageTransCompound(page) && page_mapping(page)) {	//页属于大页，且有所在的地址空间
 			VM_WARN_ON_ONCE(!PageLocked(page));
 
-			SetPageDoubleMap(compound_head(page));
+			SetPageDoubleMap(compound_head(page));				//设置该页映射到两个进程中
 			if (PageMlocked(page))
 				clear_page_mlock(compound_head(page));
 		}

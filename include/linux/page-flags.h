@@ -137,7 +137,7 @@ enum pageflags {
 
 struct page;	/* forward declaration */
 
-static inline struct page *compound_head(struct page *page)
+static inline struct page *compound_head(struct page *page)	//找到复合页的head页的指针
 {
 	unsigned long head = READ_ONCE(page->compound_head);
 
@@ -408,7 +408,7 @@ static __always_inline int PageMappingFlags(struct page *page)
 	return ((unsigned long)page->mapping & PAGE_MAPPING_FLAGS) != 0;
 }
 
-static __always_inline int PageAnon(struct page *page)
+static __always_inline int PageAnon(struct page *page)	//判断当前页面是否是匿名页面
 {
 	page = compound_head(page);
 	return ((unsigned long)page->mapping & PAGE_MAPPING_ANON) != 0;
@@ -556,7 +556,7 @@ static inline int PageTransHuge(struct page *page)
  */
 static inline int PageTransCompound(struct page *page)
 {
-	return PageCompound(page);
+	return PageCompound(page);	//检测该页是否是复合大页
 }
 
 /*

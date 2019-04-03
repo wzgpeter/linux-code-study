@@ -498,21 +498,21 @@ struct address_space *page_mapping(struct page *page)
 {
 	struct address_space *mapping;
 
-	page = compound_head(page);
+	page = compound_head(page);			//获得复合大页的头页指针
 
 	/* This happens if someone calls flush_dcache_page on slab page */
-	if (unlikely(PageSlab(page)))
+	if (unlikely(PageSlab(page)))		//若该head page属于slab
 		return NULL;
 
-	if (unlikely(PageSwapCache(page))) {
+	if (unlikely(PageSwapCache(page))) {	//该页page属于可交换到swap空间的页
 		swp_entry_t entry;
 
 		entry.val = page_private(page);
-		return swap_address_space(entry);
+		return swap_address_space(entry);	//返回swap的地址空间
 	}
 
 	mapping = page->mapping;
-	if ((unsigned long)mapping & PAGE_MAPPING_ANON)
+	if ((unsigned long)mapping & PAGE_MAPPING_ANON)	//若该head page属于匿名映射空间
 		return NULL;
 
 	return (void *)((unsigned long)mapping & ~PAGE_MAPPING_FLAGS);
