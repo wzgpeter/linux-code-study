@@ -703,7 +703,7 @@ static inline void *kmem_cache_zalloc(struct kmem_cache *k, gfp_t flags)
  * @flags: the type of memory to allocate (see kmalloc).
  */
 static inline void *kzalloc(size_t size, gfp_t flags)
-{
+{//该函数是属于通用缓冲池，根据slab缓冲区的大小而分配成若干队列，kmalloc就是为通用缓冲区obj分配的函数
 	return kmalloc(size, flags | __GFP_ZERO);
 }
 

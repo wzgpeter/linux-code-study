@@ -708,7 +708,7 @@ static int rpm_resume(struct device *dev, int rpmflags)
 	}
 
 	if (dev->power.runtime_status == RPM_RESUMING
-	    || dev->power.runtime_status == RPM_SUSPENDING) {
+	    || dev->power.runtime_status == RPM_SUSPENDING) {//有另一个进程对该设备执行resume操作，但被暂时挂起
 		DEFINE_WAIT(wait);
 
 		if (rpmflags & (RPM_ASYNC | RPM_NOWAIT)) {
@@ -727,18 +727,18 @@ static int rpm_resume(struct device *dev, int rpmflags)
 			spin_lock(&dev->power.lock);
 			goto repeat;
 		}
-
+        //暂时休眠当前进程，等待另一个进程完成对该设备的resume操作
 		/* Wait for the operation carried out in parallel with us. */
 		for (;;) {
 			prepare_to_wait(&dev->power.wait_queue, &wait,
 					TASK_UNINTERRUPTIBLE);
-			if (dev->power.runtime_status != RPM_RESUMING
+			if (dev->power.runtime_status != RPM_RESUMING //唤醒后就检查当前设备是否已经被别的进程resume了
 			    && dev->power.runtime_status != RPM_SUSPENDING)
 				break;
 
 			spin_unlock_irq(&dev->power.lock);
 
-			schedule();
+			schedule();  //休眠当前进程
 
 			spin_lock_irq(&dev->power.lock);
 		}
@@ -769,7 +769,7 @@ static int rpm_resume(struct device *dev, int rpmflags)
 		dev->power.request = RPM_REQ_RESUME;
 		if (!dev->power.request_pending) {
 			dev->power.request_pending = true;
-			queue_work(pm_wq, &dev->power.work);
+			queue_work(pm_wq, &dev->power.work); //若为异步resume，那么将work加入队列等待后续的resume处理
 		}
 		retval = 0;
 		goto out;
@@ -1026,10 +1026,10 @@ EXPORT_SYMBOL_GPL(__pm_runtime_suspend);
  * or if pm_runtime_irq_safe() has been called.
  */
 int __pm_runtime_resume(struct device *dev, int rpmflags)
-{
+{ //resume设备开始工作
 	unsigned long flags;
 	int retval;
-
+    //如果条件为真，那么会发生进程调度，当前进程会暂时休眠，在未来某一时刻重新唤醒，从当前位置继续执行
 	might_sleep_if(!(rpmflags & RPM_ASYNC) && !dev->power.irq_safe &&
 			dev->power.runtime_status != RPM_ACTIVE);
 

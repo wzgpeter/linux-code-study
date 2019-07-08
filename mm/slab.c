@@ -3709,7 +3709,7 @@ static __always_inline void *__do_kmalloc(size_t size, gfp_t flags,
 {
 	struct kmem_cache *cachep;
 	void *ret;
-
+    //分配一个kmem_cache{}的结构，作为后面管理对应的obj而使用
 	cachep = kmalloc_slab(size, flags);
 	if (unlikely(ZERO_OR_NULL_PTR(cachep)))
 		return cachep;

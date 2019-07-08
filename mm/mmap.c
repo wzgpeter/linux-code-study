@@ -1751,7 +1751,7 @@ unsigned long mmap_region(struct file *file, unsigned long addr,
 	vma->vm_page_prot = vm_get_page_prot(vm_flags);
 	vma->vm_pgoff = pgoff;
 
-	if (file) {
+	if (file) { /* 为文件映射 */
 		if (vm_flags & VM_DENYWRITE) {
 			error = deny_write_access(file);
 			if (error)
@@ -1784,7 +1784,7 @@ unsigned long mmap_region(struct file *file, unsigned long addr,
 
 		addr = vma->vm_start;
 		vm_flags = vma->vm_flags;
-	} else if (vm_flags & VM_SHARED) {
+	} else if (vm_flags & VM_SHARED) { /* 为非文件映射，即匿名映射 */
 		error = shmem_zero_setup(vma);
 		if (error)
 			goto free_vma;
