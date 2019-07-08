@@ -1124,7 +1124,7 @@ setup_irq_thread(struct irqaction *new, unsigned int irq, bool secondary)
 	struct sched_param param = {
 		.sched_priority = MAX_USER_RT_PRIO/2,
 	};
-
+    //创建相应的内核线程，此处不会运行该线程，而是由wake_up_process()来运行特定的内核线程
 	if (!secondary) {
 		t = kthread_create(irq_thread, new, "irq/%d-%s", irq,
 				   new->name);
@@ -1137,6 +1137,7 @@ setup_irq_thread(struct irqaction *new, unsigned int irq, bool secondary)
 	if (IS_ERR(t))
 		return PTR_ERR(t);
 
+    //设定该中断内核线程的调度策略和调度优先级
 	sched_setscheduler_nocheck(t, SCHED_FIFO, &param);
 
 	/*
@@ -1145,7 +1146,7 @@ setup_irq_thread(struct irqaction *new, unsigned int irq, bool secondary)
 	 * references an already freed task_struct.
 	 */
 	get_task_struct(t);
-	new->thread = t;
+	new->thread = t; //获得该中断内核线程的task struct，将来它作为wake_up_process()函数的入参来唤醒该线程
 	/*
 	 * Tell the thread to set its affinity. This is
 	 * important for shared interrupt handlers as we do
@@ -1185,7 +1186,7 @@ __setup_irq(unsigned int irq, struct irq_desc *desc, struct irqaction *new)
 
 	if (desc->irq_data.chip == &no_irq_chip)
 		return -ENOSYS;
-	if (!try_module_get(desc->owner))
+	if (!try_module_get(desc->owner)) //判断module是否active
 		return -ENODEV;
 
 	new->irq = irq;
@@ -1214,8 +1215,8 @@ __setup_irq(unsigned int irq, struct irq_desc *desc, struct irqaction *new)
 		 */
 		new->handler = irq_nested_primary_handler;
 	} else {
-		if (irq_settings_can_thread(desc)) {
-			ret = irq_setup_forced_threading(new);
+		if (irq_settings_can_thread(desc)) { //判断该中断是否可以被线程化
+			ret = irq_setup_forced_threading(new); //若可以被线程化，需要对该中断的控制结构进行相应的配置
 			if (ret)
 				goto out_mput;
 		}
@@ -1226,8 +1227,8 @@ __setup_irq(unsigned int irq, struct irq_desc *desc, struct irqaction *new)
 	 * and the interrupt does not nest into another interrupt
 	 * thread.
 	 */
-	if (new->thread_fn && !nested) {
-		ret = setup_irq_thread(new, irq, false);
+	if (new->thread_fn && !nested) { //若thread函数已经提供，且中断没有嵌套到另一个中断的线程中
+		ret = setup_irq_thread(new, irq, false); //建立中断内核线程
 		if (ret)
 			goto out_mput;
 		if (new->secondary) {
@@ -1282,7 +1283,7 @@ __setup_irq(unsigned int irq, struct irq_desc *desc, struct irqaction *new)
 	raw_spin_lock_irqsave(&desc->lock, flags);
 	old_ptr = &desc->action;
 	old = *old_ptr;
-	if (old) {
+	if (old) { //非空表示该中断信号线上已经有中断设备挂载了
 		/*
 		 * Can't share interrupts unless both agree to and are
 		 * the same type (level, edge, polarity). So both flag
@@ -1303,17 +1304,18 @@ __setup_irq(unsigned int irq, struct irq_desc *desc, struct irqaction *new)
 			irqd_set_trigger_type(&desc->irq_data, oldtype);
 		}
 
+        //如果该中断信号线上已经存在的中断类型和新加入的设备的中断类型不匹配，则退出
 		if (!((old->flags & new->flags) & IRQF_SHARED) ||
 		    (oldtype != (new->flags & IRQF_TRIGGER_MASK)) ||
 		    ((old->flags ^ new->flags) & IRQF_ONESHOT))
 			goto mismatch;
 
 		/* All handlers must agree on per-cpuness */
-		if ((old->flags & IRQF_PERCPU) !=
+		if ((old->flags & IRQF_PERCPU) != //该中断信号线对应的是global型的中断（各cpu间共享），还是只属于某个CPU
 		    (new->flags & IRQF_PERCPU))
 			goto mismatch;
 
-		/* add new interrupt at end of irq queue */
+		/* add new interrupt at end of irq queue */  //将新中断加到该中断队列的末尾
 		do {
 			/*
 			 * Or all existing action->thread_mask bits,
@@ -1324,7 +1326,7 @@ __setup_irq(unsigned int irq, struct irq_desc *desc, struct irqaction *new)
 			old_ptr = &old->next;
 			old = *old_ptr;
 		} while (old);
-		shared = 1;
+		shared = 1;     //表明该中断信号线已经是被多个中断设备共享了
 	}
 
 	/*
@@ -1332,7 +1334,7 @@ __setup_irq(unsigned int irq, struct irq_desc *desc, struct irqaction *new)
 	 * !ONESHOT irqs the thread mask is 0 so we can avoid a
 	 * conditional in irq_wake_thread().
 	 */
-	if (new->flags & IRQF_ONESHOT) {
+	if (new->flags & IRQF_ONESHOT) { //可线程化的中断是ONESHOT型的，这是区分的条件
 		/*
 		 * Unlikely to have 32 resp 64 irqs sharing one line,
 		 * but who knows.
@@ -1386,11 +1388,11 @@ __setup_irq(unsigned int irq, struct irq_desc *desc, struct irqaction *new)
 		goto out_unlock;
 	}
 
-	if (!shared) {
+	if (!shared) { //表明该中断信号线是第一次挂载中断设备
 		init_waitqueue_head(&desc->wait_for_threads);
 
 		/* Setup the type (level, edge polarity) if configured: */
-		if (new->flags & IRQF_TRIGGER_MASK) {
+		if (new->flags & IRQF_TRIGGER_MASK) { //设置中断触发类型：电平或者边沿
 			ret = __irq_set_trigger(desc,
 						new->flags & IRQF_TRIGGER_MASK);
 
@@ -1830,7 +1832,7 @@ int request_threaded_irq(unsigned int irq, irq_handler_t handler,
 	action->flags = irqflags;
 	action->name = devname;
 	action->dev_id = dev_id;
-
+    //使能中断设备
 	retval = irq_chip_pm_get(&desc->irq_data);
 	if (retval < 0) {
 		kfree(action);
