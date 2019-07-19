@@ -21,6 +21,17 @@ struct thread_info {
 
 	mm_segment_t		addr_limit;	/* thread address space */
 	unsigned		cpu;		/* current CPU */
+
+//	31		  26  25          16 15				  8  7					   0
+//	+-----------------------------------------------------------------------+
+//	|	   | NMI |	hardirq		|	softirq		    |	preempt				|
+//	+-----------------------------------------------------------------------+
+	//该计数值初值为0，使用锁时，数值加1；释放锁时，数值减1。数值为0时，内核就可执行抢占。
+	//从中断返回内核空间时，内核检查flag和该值，如果flag的TIF_NEED_RESCHED被设置，且preempt_count为0时，
+	//说明有一个更为重要的任务需要执行，并且可以安全的抢占。此时调度程序就会调度。
+	//若preempt_count不为0，说当前任务有锁，抢占不安全。此时会直接从中断中返回当前执行任务继续执行。
+	//如果当前任务所持有的锁都被释放了，那么preempt_count就会为0。此时，释放锁的代码会检查need_resched是否被设置，
+	//如果是的话，那么就会进行任务调度。
 	int			preempt_count; /* 0 => preemptable, <0 => BUG */
 	unsigned int		status;		/* thread-synchronous flags */
 
