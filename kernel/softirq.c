@@ -71,9 +71,9 @@ const char * const softirq_to_name[NR_SOFTIRQS] = {
 static void wakeup_softirqd(void)
 {
 	/* Interrupts are disabled: no need to stop preemption */
-	struct task_struct *tsk = __this_cpu_read(ksoftirqd);
+	struct task_struct *tsk = __this_cpu_read(ksoftirqd);  //每个CPU一个ksoftirqd线程用来监测软中断
 
-	if (tsk && tsk->state != TASK_RUNNING)
+	if (tsk && tsk->state != TASK_RUNNING)	//如果该线程没有启动，那么唤醒该内核线程来处理在本CPU上的处于pengding状态的软中断
 		wake_up_process(tsk);
 }
 
@@ -263,7 +263,7 @@ asmlinkage __visible void __softirq_entry __do_softirq(void)
 	 */
 	current->flags &= ~PF_MEMALLOC;
 
-	pending = local_softirq_pending();
+	pending = local_softirq_pending();	//获取本地CPU上的软中断pending信息
 	account_irq_enter_time(current);
 
 	__local_bh_disable_ip(_RET_IP_, SOFTIRQ_OFFSET);
@@ -271,17 +271,19 @@ asmlinkage __visible void __softirq_entry __do_softirq(void)
 
 restart:
 	/* Reset the pending bitmask before enabling irqs */
-	set_softirq_pending(0);
+	set_softirq_pending(0); 	//清除软中断的pending位
 
-	local_irq_enable();
+	local_irq_enable();			//使能本地CPU中断
 
+	//在open_softirq()函数中完成的注册，softirq_vec[]是个table
 	h = softirq_vec;
 
+	//这样的方法可以将所有pending的软中断按顺序进行处理完毕
 	while ((softirq_bit = ffs(pending))) {
 		unsigned int vec_nr;
 		int prev_count;
 
-		h += softirq_bit - 1;
+		h += softirq_bit - 1; 		//得到pending的软中断对应的注册函数handler
 
 		vec_nr = h - softirq_vec;
 		prev_count = preempt_count();
@@ -289,7 +291,7 @@ restart:
 		kstat_incr_softirqs_this_cpu(vec_nr);
 
 		trace_softirq_entry(vec_nr);
-		h->action(h);
+		h->action(h);				//处理相应的注册函数
 		trace_softirq_exit(vec_nr);
 		if (unlikely(prev_count != preempt_count())) {
 			pr_err("huh, entered softirq %u %s %p with preempt_count %08x, exited with %08x?\n",
@@ -298,19 +300,19 @@ restart:
 			preempt_count_set(prev_count);
 		}
 		h++;
-		pending >>= softirq_bit;
+		pending >>= softirq_bit; 	//每处理完毕一个软中断，就可以将其标志清除掉，注意这是临时变量
 	}
 
 	rcu_bh_qs();
-	local_irq_disable();
+	local_irq_disable(); 			//关闭本地CPU中断，防止在访问如下pending标志时造成问题
 
 	pending = local_softirq_pending();
-	if (pending) {
+	if (pending) {					//若本地CPU有新的软中断在pending，并且时间也允许以及不需要调度当前进程，那么继续进行软中断的处理
 		if (time_before(jiffies, end) && !need_resched() &&
 		    --max_restart)
 			goto restart;
 
-		wakeup_softirqd();
+		wakeup_softirqd(); 	//如果目前不能马上处理pending的软中断，唤醒该内核线程来处理在本CPU上的处于pengding状态的软中断
 	}
 
 	lockdep_softirq_end(in_hardirq);
