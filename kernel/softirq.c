@@ -275,7 +275,7 @@ restart:
 
 	local_irq_enable();			//使能本地CPU中断，上层的父函数再调用该函数之前已经关闭了本地CPU中断
 
-	//在open_softirq()函数中完成的注册，softirq_vec[]是个table
+	//在open_softirq()函数中完成的软中断注册，softirq_vec[]是个table
 	h = softirq_vec;
 
 	//这样的方法可以将所有pending的软中断按顺序进行处理完毕
@@ -421,7 +421,7 @@ void irq_exit(void)
 /*
  * This function must run with irqs disabled!
  */
-inline void raise_softirq_irqoff(unsigned int nr) //该函数是触发特定软中断的函数
+inline void raise_softirq_irqoff(unsigned int nr) //该函数是触发特定软中断的函数，使得该软中断在内核线程中被处理
 {
 	__raise_softirq_irqoff(nr);	//设置软中断的pending标志位
 
@@ -438,7 +438,7 @@ inline void raise_softirq_irqoff(unsigned int nr) //该函数是触发特定软中断的函数
 		wakeup_softirqd();
 }
 
-void raise_softirq(unsigned int nr)	//触发特定软中断
+void raise_softirq(unsigned int nr)	//触发特定软中断，使得该软中断在内核线程中被处理
 {
 	unsigned long flags;
 
@@ -447,13 +447,13 @@ void raise_softirq(unsigned int nr)	//触发特定软中断
 	local_irq_restore(flags);
 }
 
-void __raise_softirq_irqoff(unsigned int nr) //置特定的软中断标志为1，后面就可以取该pending变量，判断是否有软中断在等待处理
+void __raise_softirq_irqoff(unsigned int nr) //置pending变量中特定的软中断标志为1，内核从硬中断返回时，就可以取该pending变量，判断是否有软中断在等待处理
 {
 	trace_softirq_raise(nr);
 	or_softirq_pending(1UL << nr);
 }
 
-void open_softirq(int nr, void (*action)(struct softirq_action *))
+void open_softirq(int nr, void (*action)(struct softirq_action *)) //进行软中断的注册
 {
 	softirq_vec[nr].action = action;
 }
@@ -472,7 +472,7 @@ static DEFINE_PER_CPU(struct tasklet_head, tasklet_hi_vec);
 static void __tasklet_schedule_common(struct tasklet_struct *t,
 				      struct tasklet_head __percpu *headp,
 				      unsigned int softirq_nr)
-{
+{//将一个tasklet事件加入tasklet的链表中，同时置该tasklet对应的软中断pending位，触发软中断机制开始工作。
 	struct tasklet_head *head;
 	unsigned long flags;
 
@@ -510,40 +510,41 @@ static void tasklet_action_common(struct softirq_action *a,
 {
 	struct tasklet_struct *list;
 
-	local_irq_disable();
-	list = tl_head->head;
+	local_irq_disable();	//关本地CPU中断，以便处理tasklet链表，防止中断造成链表内容不一致
+	list = tl_head->head;	//只取tasklet链表中的第一项进行操作
 	tl_head->head = NULL;
 	tl_head->tail = &tl_head->head;
-	local_irq_enable();
+	local_irq_enable();		//开本地CPU中断
 
 	while (list) {
 		struct tasklet_struct *t = list;
 
 		list = list->next;
 
-		if (tasklet_trylock(t)) {
-			if (!atomic_read(&t->count)) {
+		if (tasklet_trylock(t)) {	//对于每个tasklet项，防止别的CPU进入该区间，进行加锁操作
+			if (!atomic_read(&t->count)) {	//若该t->count为0，表示这个tasklet项被disable掉了，不需要执行这个tasklet
 				if (!test_and_clear_bit(TASKLET_STATE_SCHED,
 							&t->state))
 					BUG();
-				t->func(t->data);
+				t->func(t->data);	//t对应的是tasklet_vec{}/tasklet_hi_vec{}链表中的某项，调用真正的tasklet函数进行处理
 				tasklet_unlock(t);
 				continue;
 			}
 			tasklet_unlock(t);
 		}
 
-		local_irq_disable();
+		local_irq_disable();	//关本地CPU中断，保证链表操作的一致
 		t->next = NULL;
-		*tl_head->tail = t;
-		tl_head->tail = &t->next;
-		__raise_softirq_irqoff(softirq_nr);
-		local_irq_enable();
+		*tl_head->tail = t;			//第一次的时候*tl_head->tail指向的是tl_head->head指针，后面*tl_head->tail指向的是当前tasklet的t->next
+		tl_head->tail = &t->next;	//此处又重新将tasklet的链表串起来了。
+		__raise_softirq_irqoff(softirq_nr);	//置pending变量该对应的软中断位为1，当内核从中断处理返回时就会检查该pending标志，tasklet就会得到处理
+		local_irq_enable();		//开本地CPU中断
 	}
 }
 
 //函数tasklet_action()与函数tasklet_hi_action()注册到软中断的结构中。
 //他们分别对应的软中断号是TASKLET_SOFTIRQ与HI_SOFTIRQ.
+//调用关系如下：
 //__do_softirq() ----> h->action() ----> tasklet_action()/tasklet_hi_action()
 static __latent_entropy void tasklet_action(struct softirq_action *a)
 {
@@ -566,18 +567,18 @@ void tasklet_init(struct tasklet_struct *t,
 }
 EXPORT_SYMBOL(tasklet_init);
 
-void tasklet_kill(struct tasklet_struct *t)
+void tasklet_kill(struct tasklet_struct *t)	//杀死特定的tasklet项
 {
 	if (in_interrupt())
 		pr_notice("Attempt to kill tasklet from interrupt\n");
 
-	while (test_and_set_bit(TASKLET_STATE_SCHED, &t->state)) {
+	while (test_and_set_bit(TASKLET_STATE_SCHED, &t->state)) {	//先保证要杀死的tasklet没有在执行，若执行则调度出去
 		do {
 			yield();
 		} while (test_bit(TASKLET_STATE_SCHED, &t->state));
 	}
 	tasklet_unlock_wait(t);
-	clear_bit(TASKLET_STATE_SCHED, &t->state);
+	clear_bit(TASKLET_STATE_SCHED, &t->state);	//将该tasklet的可调度标志清除，以后该tasklet项就不会被调度进去了
 }
 EXPORT_SYMBOL(tasklet_kill);
 
