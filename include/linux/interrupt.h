@@ -557,7 +557,7 @@ struct tasklet_struct name = { NULL, 0, ATOMIC_INIT(1), func, data }
 
 enum
 {
-	TASKLET_STATE_SCHED,	/* Tasklet is scheduled for execution */
+	TASKLET_STATE_SCHED,	/* Tasklet is scheduled for execution */  //表明该tasklet被提交，但还没有被执行；若已执行，该标志会被清除
 	TASKLET_STATE_RUN	/* Tasklet is running (SMP only) */
 };
 

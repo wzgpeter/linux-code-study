@@ -511,7 +511,7 @@ static void tasklet_action_common(struct softirq_action *a,
 	struct tasklet_struct *list;
 
 	local_irq_disable();	//关本地CPU中断，以便处理tasklet链表，防止中断造成链表内容不一致
-	list = tl_head->head;	//只取tasklet链表中的第一项进行操作
+	list = tl_head->head;	//先取tasklet链表中的第一项进行操作
 	tl_head->head = NULL;
 	tl_head->tail = &tl_head->head;
 	local_irq_enable();		//开本地CPU中断
@@ -572,10 +572,10 @@ void tasklet_kill(struct tasklet_struct *t)	//杀死特定的tasklet项
 	if (in_interrupt())
 		pr_notice("Attempt to kill tasklet from interrupt\n");
 
-	while (test_and_set_bit(TASKLET_STATE_SCHED, &t->state)) {	//先保证要杀死的tasklet没有在执行，若执行则调度出去
+	while (test_and_set_bit(TASKLET_STATE_SCHED, &t->state)) {	//先保证要杀死的tasklet没有在执行，若执行则调度当前进程出去
 		do {
 			yield();
-		} while (test_bit(TASKLET_STATE_SCHED, &t->state));
+		} while (test_bit(TASKLET_STATE_SCHED, &t->state));	//若回来发现当前tasklet还是可以被调度，那么继续让出CPU执行权限
 	}
 	tasklet_unlock_wait(t);
 	clear_bit(TASKLET_STATE_SCHED, &t->state);	//将该tasklet的可调度标志清除，以后该tasklet项就不会被调度进去了
@@ -656,14 +656,14 @@ static int ksoftirqd_should_run(unsigned int cpu)
 static void run_ksoftirqd(unsigned int cpu)
 {
 	local_irq_disable();
-	if (local_softirq_pending()) {
+	if (local_softirq_pending()) {	//若有软中断pending，则处理
 		/*
 		 * We can safely run softirq on inline stack, as we are not deep
 		 * in the task stack here.
 		 */
-		__do_softirq();
-		local_irq_enable();
-		cond_resched();
+		__do_softirq();			//进行软中断的处理，某些情况下会启动内核线程ksoftirqd处理仍然pending的软中断
+		local_irq_enable();		//开本地CPU中断
+		cond_resched();			//进行调度，让出CPU控制权，便于启动的内核线程ksoftirqd在某一时刻得到执行
 		return;
 	}
 	local_irq_enable();
@@ -686,7 +686,7 @@ void tasklet_kill_immediate(struct tasklet_struct *t, unsigned int cpu)
 	BUG_ON(cpu_online(cpu));
 	BUG_ON(test_bit(TASKLET_STATE_RUN, &t->state));
 
-	if (!test_bit(TASKLET_STATE_SCHED, &t->state))
+	if (!test_bit(TASKLET_STATE_SCHED, &t->state))	//若该tasklet已经被提交，但还没执行，继续kill操作；若没有提交则直接返回
 		return;
 
 	/* CPU is dead, so no lock needed. */
@@ -702,19 +702,20 @@ void tasklet_kill_immediate(struct tasklet_struct *t, unsigned int cpu)
 	BUG();
 }
 
+//将别的CPU上的tasklet链表迁移到本地CPU的tasklet链表上
 static int takeover_tasklets(unsigned int cpu)
 {
 	/* CPU is dead, so no lock needed. */
 	local_irq_disable();
 
 	/* Find end, append list for that CPU. */
-	if (&per_cpu(tasklet_vec, cpu).head != per_cpu(tasklet_vec, cpu).tail) {
-		*__this_cpu_read(tasklet_vec.tail) = per_cpu(tasklet_vec, cpu).head;
-		this_cpu_write(tasklet_vec.tail, per_cpu(tasklet_vec, cpu).tail);
-		per_cpu(tasklet_vec, cpu).head = NULL;
-		per_cpu(tasklet_vec, cpu).tail = &per_cpu(tasklet_vec, cpu).head;
+	if (&per_cpu(tasklet_vec, cpu).head != per_cpu(tasklet_vec, cpu).tail) { //确定远端CPU上tasklet链表完成一次处理了；完成时head与tail就是不等的
+		*__this_cpu_read(tasklet_vec.tail) = per_cpu(tasklet_vec, cpu).head; //将本地CPU上tasklet_vec.head指向迁移过来的tasklet的head
+		this_cpu_write(tasklet_vec.tail, per_cpu(tasklet_vec, cpu).tail);	 //将本地CPU上tasklet_vec.tail指向迁移过来的tasklet的tail
+		per_cpu(tasklet_vec, cpu).head = NULL;								 //清除远端CPU上的tasklet_vec.head指针
+		per_cpu(tasklet_vec, cpu).tail = &per_cpu(tasklet_vec, cpu).head;	 //设定远端CPU上的tasklet_vec.tail指向tasklet_vec.head；这是初始配置
 	}
-	raise_softirq_irqoff(TASKLET_SOFTIRQ);
+	raise_softirq_irqoff(TASKLET_SOFTIRQ);	//在本地CPU上触发tasklet的处理
 
 	if (&per_cpu(tasklet_hi_vec, cpu).head != per_cpu(tasklet_hi_vec, cpu).tail) {
 		*__this_cpu_read(tasklet_hi_vec.tail) = per_cpu(tasklet_hi_vec, cpu).head;
