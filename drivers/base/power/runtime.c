@@ -293,7 +293,7 @@ static void rpm_put_suppliers(struct device *dev)
 	list_for_each_entry_rcu(link, &dev->links.suppliers, c_node)
 		if (link->rpm_active &&
 		    READ_ONCE(link->status) != DL_STATE_SUPPLIER_UNBIND) {
-			pm_runtime_put(link->supplier);
+			pm_runtime_put(link->supplier);	//将当前设备suspend，即idle态
 			link->rpm_active = false;
 		}
 }
@@ -303,6 +303,7 @@ static void rpm_put_suppliers(struct device *dev)
  * @cb: Runtime PM callback to run.
  * @dev: Device to run the callback for.
  */
+//对特定的设备运行功耗管理回调函数
 static int __rpm_callback(int (*cb)(struct device *), struct device *dev)
 	__releases(&dev->power.lock) __acquires(&dev->power.lock)
 {
@@ -332,7 +333,7 @@ static int __rpm_callback(int (*cb)(struct device *), struct device *dev)
 		}
 	}
 
-	retval = cb(dev);
+	retval = cb(dev);	//运行该设备对应的功耗管理回调函数
 
 	if (dev->power.irq_safe) {
 		spin_lock(&dev->power.lock);
@@ -374,13 +375,13 @@ static int __rpm_callback(int (*cb)(struct device *), struct device *dev)
  *
  * This function must be called under dev->power.lock with interrupts disabled.
  */
-static int rpm_idle(struct device *dev, int rpmflags)
+static int rpm_idle(struct device *dev, int rpmflags) //将该设备dev置idle状态，即suspend该设备
 {
 	int (*callback)(struct device *);
 	int retval;
 
 	trace_rpm_idle_rcuidle(dev, rpmflags);
-	retval = rpm_check_suspend_allowed(dev);
+	retval = rpm_check_suspend_allowed(dev);	//该设备是否可以被suspend
 	if (retval < 0)
 		;	/* Conditions are wrong. */
 
@@ -409,19 +410,19 @@ static int rpm_idle(struct device *dev, int rpmflags)
 		goto out;
 
 	/* Carry out an asynchronous or a synchronous idle notification. */
-	if (rpmflags & RPM_ASYNC) {
+	if (rpmflags & RPM_ASYNC) {  //若允许异步通知idle状态，则通过work-queue的方式进行
 		dev->power.request = RPM_REQ_IDLE;
-		if (!dev->power.request_pending) {
+		if (!dev->power.request_pending) { //若没有请求idle的work在队列中，则继续下面的工作；否则直接返回，因为已经有work在queue中了
 			dev->power.request_pending = true;
-			queue_work(pm_wq, &dev->power.work);
+			queue_work(pm_wq, &dev->power.work);	//将一个用来通知idle的work放入队列"pm_wq"中
 		}
 		trace_rpm_return_int_rcuidle(dev, _THIS_IP_, 0);
-		return 0;
+		return 0;  //通知设备可以suspend的work已经加入队列中，则返回
 	}
-
+	//到此处表示，不能使用异步的方式挂起当前设备
 	dev->power.idle_notification = true;
 
-	callback = RPM_GET_CALLBACK(dev, runtime_idle);
+	callback = RPM_GET_CALLBACK(dev, runtime_idle); //获取当前设备的回调函数
 
 	if (callback)
 		retval = __rpm_callback(callback, dev);
@@ -672,7 +673,7 @@ static int rpm_suspend(struct device *dev, int rpmflags)
  *
  * This function must be called under dev->power.lock with interrupts disabled.
  */
-static int rpm_resume(struct device *dev, int rpmflags)
+static int rpm_resume(struct device *dev, int rpmflags) //将特定设备从挂起态恢复
 	__releases(&dev->power.lock) __acquires(&dev->power.lock)
 {
 	int (*callback)(struct device *);
@@ -730,17 +731,17 @@ static int rpm_resume(struct device *dev, int rpmflags)
         //暂时休眠当前进程，等待另一个进程完成对该设备的resume操作
 		/* Wait for the operation carried out in parallel with us. */
 		for (;;) {
-			prepare_to_wait(&dev->power.wait_queue, &wait,
+			prepare_to_wait(&dev->power.wait_queue, &wait,	//将wait加入到wait-queue休眠队列中
 					TASK_UNINTERRUPTIBLE);
-			if (dev->power.runtime_status != RPM_RESUMING //唤醒后就检查当前设备是否已经被别的进程resume了
+			if (dev->power.runtime_status != RPM_RESUMING 	//唤醒后就检查当前设备是否已经被别的进程resume了，若已恢复，则跳出循环
 			    && dev->power.runtime_status != RPM_SUSPENDING)
 				break;
 
-			spin_unlock_irq(&dev->power.lock);
+			spin_unlock_irq(&dev->power.lock); 	//开本地中断且允许多核抢占情况
 
-			schedule();  //休眠当前进程
+			schedule();  //上面检查当前设备没有恢复，则继续休眠当前进程，等待别的地方唤醒该休眠队列上的该进程
 
-			spin_lock_irq(&dev->power.lock);
+			spin_lock_irq(&dev->power.lock);	//禁止本地中断且禁止内核抢占smp
 		}
 		finish_wait(&dev->power.wait_queue, &wait);
 		goto repeat;
@@ -962,7 +963,7 @@ EXPORT_SYMBOL_GPL(pm_schedule_suspend);
  * This routine may be called in atomic context if the RPM_ASYNC flag is set,
  * or if pm_runtime_irq_safe() has been called.
  */
-int __pm_runtime_idle(struct device *dev, int rpmflags)
+int __pm_runtime_idle(struct device *dev, int rpmflags) //将当前设备suspend，即idle态
 {
 	unsigned long flags;
 	int retval;
@@ -972,11 +973,11 @@ int __pm_runtime_idle(struct device *dev, int rpmflags)
 			return 0;
 	}
 
-	might_sleep_if(!(rpmflags & RPM_ASYNC) && !dev->power.irq_safe);
+	might_sleep_if(!(rpmflags & RPM_ASYNC) && !dev->power.irq_safe); //调试进程在当前点是否可以睡眠，主要调试时使用
 
-	spin_lock_irqsave(&dev->power.lock, flags);
-	retval = rpm_idle(dev, rpmflags);
-	spin_unlock_irqrestore(&dev->power.lock, flags);
+	spin_lock_irqsave(&dev->power.lock, flags);						 //上锁防止smp，且关本地中断
+	retval = rpm_idle(dev, rpmflags);  								 //将该设备dev置idle状态，即suspend该设备
+	spin_unlock_irqrestore(&dev->power.lock, flags);				 //解锁，且恢复本地中断
 
 	return retval;
 }
@@ -1029,7 +1030,7 @@ int __pm_runtime_resume(struct device *dev, int rpmflags)
 { //resume设备开始工作
 	unsigned long flags;
 	int retval;
-    //如果条件为真，那么会发生进程调度，当前进程会暂时休眠，在未来某一时刻重新唤醒，从当前位置继续执行
+    //如果条件为真，那么会发生进程调度，当前进程会暂时休眠，在未来某一时刻重新唤醒，从当前位置继续执行: 此处是进行调试的代码，实际中不运行
 	might_sleep_if(!(rpmflags & RPM_ASYNC) && !dev->power.irq_safe &&
 			dev->power.runtime_status != RPM_ACTIVE);
 
@@ -1037,7 +1038,7 @@ int __pm_runtime_resume(struct device *dev, int rpmflags)
 		atomic_inc(&dev->power.usage_count);
 
 	spin_lock_irqsave(&dev->power.lock, flags);
-	retval = rpm_resume(dev, rpmflags);
+	retval = rpm_resume(dev, rpmflags);				//从idle状态恢复该设备
 	spin_unlock_irqrestore(&dev->power.lock, flags);
 
 	return retval;

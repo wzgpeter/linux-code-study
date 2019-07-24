@@ -1411,30 +1411,32 @@ __setup_irq(unsigned int irq, struct irq_desc *desc, struct irqaction *new)
 		 * fails. Interrupts which are in managed shutdown mode
 		 * will simply ignore that activation request.
 		 */
-		ret = irq_activate(desc);
+		ret = irq_activate(desc);	//激活一个特定的中断，该中断由"irq_desc{} desc"句柄来描述
 		if (ret)
 			goto out_unlock;
 
+		//初始化该物理中断通道的所有标志
 		desc->istate &= ~(IRQS_AUTODETECT | IRQS_SPURIOUS_DISABLED | \
 				  IRQS_ONESHOT | IRQS_WAITING);
 		irqd_clear(&desc->irq_data, IRQD_IRQ_INPROGRESS);
 
-		if (new->flags & IRQF_PERCPU) {
+		//该中断通道对应的中断不是处理器间共享的，而是属于特定一个CPU的：每个CPU看到的中断控制器不是同一套
+		if (new->flags & IRQF_PERCPU) {	//设置相应的标志对应非共享中断
 			irqd_set(&desc->irq_data, IRQD_PER_CPU);
 			irq_settings_set_per_cpu(desc);
 		}
 
-		if (new->flags & IRQF_ONESHOT)
+		if (new->flags & IRQF_ONESHOT) //IRQF_ONESHOT表示该中断处理过程是不能被打断的，即不能嵌套。
 			desc->istate |= IRQS_ONESHOT;
 
 		/* Exclude IRQ from balancing if requested */
-		if (new->flags & IRQF_NOBALANCING) {
+		if (new->flags & IRQF_NOBALANCING) { //对于可在多个CPU间共享的中断，如果不想让中断在多个CPU间平衡处理，可设置该标志
 			irq_settings_set_no_balancing(desc);
 			irqd_set(&desc->irq_data, IRQD_NO_BALANCING);
 		}
 
 		if (irq_settings_can_autoenable(desc)) {
-			irq_startup(desc, IRQ_RESEND, IRQ_START_COND);
+			irq_startup(desc, IRQ_RESEND, IRQ_START_COND);	//开启中断
 		} else {
 			/*
 			 * Shared interrupts do not go well with disabling
@@ -1447,7 +1449,7 @@ __setup_irq(unsigned int irq, struct irq_desc *desc, struct irqaction *new)
 			desc->depth = 1;
 		}
 
-	} else if (new->flags & IRQF_TRIGGER_MASK) {
+	} else if (new->flags & IRQF_TRIGGER_MASK) { //该中断信号线不是第一次挂在中断设备（句柄）
 		unsigned int nmsk = new->flags & IRQF_TRIGGER_MASK;
 		unsigned int omsk = irqd_get_trigger_type(&desc->irq_data);
 
@@ -1471,27 +1473,27 @@ __setup_irq(unsigned int irq, struct irq_desc *desc, struct irqaction *new)
 	 */
 	if (shared && (desc->istate & IRQS_SPURIOUS_DISABLED)) {
 		desc->istate &= ~IRQS_SPURIOUS_DISABLED;
-		__enable_irq(desc);
+		__enable_irq(desc);		//开启中断
 	}
 
 	raw_spin_unlock_irqrestore(&desc->lock, flags);
 	chip_bus_sync_unlock(desc);
 	mutex_unlock(&desc->request_mutex);
 
-	irq_setup_timings(desc, new);
+	irq_setup_timings(desc, new); //进行中断的timing计数
 
 	/*
 	 * Strictly no need to wake it up, but hung_task complains
 	 * when no hard interrupt wakes the thread up.
 	 */
-	if (new->thread)
+	if (new->thread)	//唤醒中断线程
 		wake_up_process(new->thread);
 	if (new->secondary)
 		wake_up_process(new->secondary->thread);
 
-	register_irq_proc(irq, desc);
+	register_irq_proc(irq, desc);		//在proc文件夹下建立相关的文件"/proc/"的显示
 	new->dir = NULL;
-	register_handler_proc(irq, new);
+	register_handler_proc(irq, new);	
 	return 0;
 
 mismatch:
@@ -1543,7 +1545,7 @@ out_mput:
 int setup_irq(unsigned int irq, struct irqaction *act)
 {
 	int retval;
-	struct irq_desc *desc = irq_to_desc(irq);
+	struct irq_desc *desc = irq_to_desc(irq);	//由中断号找到该中断对应的irq_desc{}
 
 	if (!desc || WARN_ON(irq_settings_is_per_cpu_devid(desc)))
 		return -EINVAL;
@@ -1552,7 +1554,7 @@ int setup_irq(unsigned int irq, struct irqaction *act)
 	if (retval < 0)
 		return retval;
 
-	retval = __setup_irq(irq, desc, act);
+	retval = __setup_irq(irq, desc, act);	//注册action到特定的中断中
 
 	if (retval)
 		irq_chip_pm_put(&desc->irq_data);

@@ -71,7 +71,7 @@ const char * const softirq_to_name[NR_SOFTIRQS] = {
 static void wakeup_softirqd(void)
 {
 	/* Interrupts are disabled: no need to stop preemption */
-	struct task_struct *tsk = __this_cpu_read(ksoftirqd);  //每个CPU一个ksoftirqd线程用来监测软中断
+	struct task_struct *tsk = __this_cpu_read(ksoftirqd);  //每个CPU一个内核线程ksoftirqd用来监测软中断
 
 	if (tsk && tsk->state != TASK_RUNNING)	//如果该线程没有启动，那么唤醒该内核线程来处理在本CPU上的处于pengding状态的软中断
 		wake_up_process(tsk);

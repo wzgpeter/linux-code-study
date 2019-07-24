@@ -354,7 +354,7 @@ static inline int irq_timing_decode(u64 value, u64 *timestamp)
  * __always_inline we can end up with a function call and a small
  * overhead in the hotpath for nothing.
  */
-static __always_inline void record_irq_time(struct irq_desc *desc)
+static __always_inline void record_irq_time(struct irq_desc *desc) //在中断处理过程中进行时钟的记录
 {
 	if (!static_branch_likely(&irq_timing_enabled))
 		return;
